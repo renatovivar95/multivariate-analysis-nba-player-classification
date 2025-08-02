@@ -1,0 +1,4 @@
+awards.csv was obtain from NBA API (for selected players) using hoopR::nba_playerawards.
+After downloading, the structure was changed so that all we need is now contained in the DESCRIPTION column.
+
+The rest is from https://www.kaggle.com/datasets/drgilermo/nba-players-stats?select=Seasons_Stats.csv

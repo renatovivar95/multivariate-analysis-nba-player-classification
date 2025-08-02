@@ -1,0 +1,387 @@
+---
+title: "Multivariate Analysis Project - Classification"
+author: "Oleh Lukyrych - Renato Vivar - Susana Ferreira"
+date: "2025-01-05"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Download Libraries
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(readr)
+# Load necessary libraries
+library(ggplot2)
+library(GGally)
+library(reshape2) # For reshaping data to long format
+library(vcd) #assocstats - calculates statistics for association between two categorical variables.
+library(grid)
+library(rpart)
+library(caret)
+library(dplyr)
+library(class)
+library(lubridate)
+library(DT)
+library(psych)
+library(corrplot)
+library(HDoutliers)
+library(heplots)
+library(MLmetrics)
+library(MASS)
+library(ROSE)#for oversampling/downsampling
+library(factoextra)
+```
+
+Importing dataset for classification without log-transformations
+```{r}
+NBA_PLAYERS <- read_csv("nba.csv")
+names(NBA_PLAYERS)
+summary(NBA_PLAYERS)
+NBA_PLAYERS$AWD<-as.factor(NBA_PLAYERS$AWD)
+
+```
+
+***------------------------------------------------***
+
+# CLASSIFICATION METHODS FOR AWARD TASK
+
+Created function to perform the classification methods with k-fold cross-validation (k=10)
+
+```{r}  
+library(caret)
+library(e1071)  
+
+#  Macro F1-score metric function
+macro_f1_metric <- function(data, lev = NULL, model = NULL) {
+  f1_scores <- numeric(length(lev))
+  
+  for (i in seq_along(lev)) {
+    precision <- posPredValue(data$pred, data$obs, positive = lev[i])
+    recall <- sensitivity(data$pred, data$obs, positive = lev[i])
+    
+    f1_scores[i] <- ifelse((precision + recall) == 0, 0, 2 * precision * recall / (precision + recall))
+  }
+
+  macro_f1 <- mean(f1_scores, na.rm = TRUE)
+  c(Macro_F1 = macro_f1)
+}
+
+# function to train and evaluate a model with Macro F1-score for binary classification
+train_and_evaluate_model <- function(model, data, target) {
+ 
+  # define stratified 10-fold cross-validation
+  set.seed(123)
+  train_control <- trainControl(
+    method = "cv",                  
+    number = 10,                    
+    classProbs = TRUE,              
+    summaryFunction = macro_f1_metric,  
+    savePredictions = "final"   
+  )
+    # define tuning grid for kNN
+  if (model == "knn") {
+    tune_grid <- expand.grid(k = seq(1, 60, by = 2))  
+  } else {
+    tune_grid <- NULL  
+  }
+  # train the model
+  model_cv <- train(
+    as.formula(paste(target, "~ .")), 
+    data = data, 
+    method = model, 
+    trControl = train_control,
+    metric = "Macro_F1" ,           
+    preProcess = c("center", "scale"),
+    tuneGrid = tune_grid   
+  )
+  if (model=="knn"){
+    optimal_k <- model_cv$bestTune$k
+    print(paste("The optimal k is:", optimal_k))
+  }
+  # extract predictions
+  predictions <- model_cv$pred
+  
+  # confusion matrix
+  confusion_mat <- confusionMatrix(predictions$pred, predictions$obs)
+  
+  # return results
+  results <- list(
+    Model = model,
+    Best_Macro_F1 = model_cv$results[which.max(model_cv$results$Macro_F1), "Macro_F1"],
+    Confusion_Matrix = confusion_mat
+  )
+  
+  return(results)
+}
+```
+
+# Preparation of the dataset for Award Task
+
+```{r}  
+dataNB <- subset(NBA_PLAYERS, select = -c(Pos))   
+levels(dataNB$AWD) <- make.names(levels(dataNB$AWD))  
+
+```
+
+
+# LDA for Award Task
+```{r}
+results <- train_and_evaluate_model("lda", dataNB, "AWD")
+
+print(results$Best_Macro_F1)       # macro F1-score
+print(results$Confusion_Matrix)    # confusion matrix
+
+
+```
+
+
+# QDA for Award Task
+```{r}
+# # qda with above function to make classification AWARD
+# dataNB <- subset(NBA_PLAYERS, select = -c(Player, Tm, Year, AWD, Pos))  
+# levels(dataNB$AWD) <- make.names(levels(dataNB$AWD))  # Clean factor levels
+
+results <- train_and_evaluate_model("qda", dataNB, "AWD")
+
+print(results$Best_Macro_F1)      
+print(results$Confusion_Matrix)    
+```
+
+
+# kNN for Award Task 
+```{r}
+# # knn with above function to make classification AWARD
+
+results <- train_and_evaluate_model("knn", dataNB, "AWD")
+
+print(results$Best_Macro_F1)      
+print(results$Confusion_Matrix)   
+```
+
+
+
+#Naive Bayes for Award Task 
+
+```{r}
+# train and evaluate using Naive Bayes, complete dataset and awd
+results <- train_and_evaluate_model("naive_bayes", dataNB, "AWD")
+
+print(results$Best_Macro_F1)       
+print(results$Confusion_Matrix)   
+```
+
+
+
+# CLASSIFICATION METHODS FOR POSITION TASK
+
+Created function to perform the classification methods with k-fold cross-validation (k=10)
+
+```{r}
+# Custom Macro F1-score metric for multi-class classification
+multi_class_macro_f1 <- function(data, lev = NULL, model = NULL) {
+  
+  f1_scores <- numeric(length(lev))
+  
+  for (i in seq_along(lev)) {
+    # set current level as positive, others as negative
+    binary_obs <- ifelse(data$obs == lev[i], lev[i], "Other")
+    binary_pred <- ifelse(data$pred == lev[i], lev[i], "Other")
+    
+    #compute precision and recall for the current class
+    precision <- posPredValue(factor(binary_pred, levels = c(lev[i], "Other")), 
+                              factor(binary_obs, levels = c(lev[i], "Other")), 
+                              positive = lev[i])
+    recall <- sensitivity(factor(binary_pred, levels = c(lev[i], "Other")), 
+                          factor(binary_obs, levels = c(lev[i], "Other")), 
+                          positive = lev[i])
+    
+    # compute F1-score for the class
+    f1_scores[i] <- ifelse((precision + recall) == 0, 0, 2 * precision * recall / (precision + recall))
+  }
+  
+  macro_f1 <- mean(f1_scores, na.rm = TRUE)
+  c(Macro_F1 = macro_f1)
+}
+
+
+train_and_evaluate_model_pos <- function(model, data, target) {
+  set.seed(123) 
+  train_control <- trainControl(
+    method = "cv",                     
+    number = 10,                      
+    classProbs = TRUE,                 
+    summaryFunction = multi_class_macro_f1,  
+    savePredictions = "final"        
+  )
+    # Define tuning grid for kNN
+  if (model == "knn") {
+    tune_grid <- expand.grid(k = seq(1, 60, by = 2))  
+    
+  } else {
+    tune_grid <- NULL 
+  }
+  # train the model
+  model_cv <- train(
+    as.formula(paste(target, "~ .")), 
+    data = data, 
+    method = model, 
+    trControl = train_control,
+    metric = "Macro_F1",                
+    preProcess = c("center", "scale"),
+    tuneGrid = tune_grid   
+  )
+  if (model=="knn"){
+    optimal_k <- model_cv$bestTune$k
+    print(paste("The optimal k is:", optimal_k))
+  }
+  
+  if ("Macro_F1" %in% colnames(model_cv$results)) {
+    best_macro_f1 <- max(model_cv$results$Macro_F1, na.rm = TRUE)
+  } else {
+    best_macro_f1 <- NULL
+  }
+  
+  predictions <- model_cv$pred
+  
+  confusion_mat <- confusionMatrix(predictions$pred, predictions$obs)
+  
+  results <- list(
+    Model = model,
+    Best_Macro_F1 = best_macro_f1,
+    Confusion_Matrix = confusion_mat
+  )
+  
+  return(results)
+}
+
+
+```
+
+
+# Preparation of the dataset for Position Task
+
+```{r}
+dataNB <- subset(NBA_PLAYERS, select = -AWD) 
+dataNB$Pos <- as.factor(dataNB$Pos)  # ensure target Pos is a factor
+```
+
+
+# LDA for Position Task
+```{r}
+results <- train_and_evaluate_model_pos("lda", dataNB, "Pos")
+
+# Print results
+print(results$Best_Macro_F1)    
+print(results$Confusion_Matrix)    
+
+```
+
+
+# QDA for Position Task
+```{r}
+results <- train_and_evaluate_model_pos("qda", dataNB, "Pos")
+
+print(results$Best_Macro_F1)       
+print(results$Confusion_Matrix)   
+
+```
+
+
+# kNN for Position Task
+```{r}
+results_knn <- train_and_evaluate_model_pos("knn", dataNB, "Pos")
+
+print(results_knn$Best_Macro_F1)       
+print(results_knn$Confusion_Matrix)    
+
+```
+
+# Naive Bayes for Position Task
+```{r}
+
+results <- train_and_evaluate_model_pos("naive_bayes", dataNB, "Pos")
+
+print(results$Best_Macro_F1)       
+print(results$Confusion_Matrix)   
+
+```
+
+
+***------------------------------------------------------------------------***
+
+# CLASSIFICATION METHODS WITH DIMENSION REDUCTION (PCA)
+
+```{r}
+NBA_PCA<-read_csv("nba_transformed_pca.csv")
+NBA_6PCA<-NBA_PCA[, !(names(NBA_PCA) %in% c("PC7","PC8","PC9","PC10","PC11","PC12"))]
+```
+
+# Preparation of dataset to perform methods
+```{r}
+NBA_PCA_Awd <- subset(NBA_PCA, select = -Pos) 
+NBA_PCA_Awd$AWD<-as.factor(NBA_PCA_Awd$AWD)
+levels(NBA_PCA_Awd$AWD) <- make.names(levels(NBA_PCA_Awd$AWD))
+NBA_6PCA_Awd <- subset(NBA_6PCA, select = -Pos)
+NBA_6PCA_Awd$AWD <- as.factor(NBA_6PCA_Awd$AWD)
+levels(NBA_6PCA_Awd$AWD) <- make.names(levels(NBA_6PCA_Awd$AWD))
+NBA_3PCA_Awd<-NBA_6PCA_Awd[, !(names(NBA_6PCA_Awd) %in% c("PC4","PC5","PC6"))]
+
+```
+
+# LDA & 12 or less PC for awd 
+
+```{r}
+results_lda_12pca_awd <- train_and_evaluate_model("lda", NBA_PCA_Awd, "AWD")
+
+# Print results
+print(results_lda_12pca_awd$Best_Macro_F1)       # Print best Macro F1-score
+print(results_lda_12pca_awd$Confusion_Matrix)    # Print confusion matrix
+
+```
+
+# with 6 PC
+```{r}
+results_lda_6pca_awd <- train_and_evaluate_model("lda", NBA_6PCA_Awd , "AWD")
+
+# Print results
+print(results_lda_6pca_awd$Best_Macro_F1)       # Print best Macro F1-score
+print(results_lda_6pca_awd$Confusion_Matrix)    # Print confusion matrix
+
+```
+
+# with 3 PC
+```{r}
+results_lda_3pca_awd <- train_and_evaluate_model("lda", NBA_3PCA_Awd , "AWD")
+
+
+print(results_lda_3pca_awd$Best_Macro_F1)       
+print(results_lda_3pca_awd$Confusion_Matrix)    
+```
+
+
+# QDA & 12 or less PC for awd 
+
+```{r}
+results_12pca_qda_awd <- train_and_evaluate_model("qda", NBA_PCA_Awd, "AWD")
+
+# Print results
+print(results_12pca_qda_awd$Best_Macro_F1)      
+print(results_12pca_qda_awd$Confusion_Matrix)    
+```
+
+
+# QDA with 6 PC
+```{r}
+results_qda_6pca_awd <- train_and_evaluate_model("qda", NBA_6PCA_Awd , "AWD")
+
+# Print results
+print(results_qda_6pca_awd$Best_Macro_F1)       # Print best Macro F1-score
+print(results_qda_6pca_awd$Confusion_Matrix)    # Print confusion matrix
+
+```
+
+
+

@@ -1,0 +1,200 @@
+---
+title: "Multivariate Analysis Project - Classmaps"
+author: "Oleh Lukyrych - Renato Vivar - Susana Ferreira"
+date: "2025-01-05"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Libraries 
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(psych)
+library(car)
+library(GGally)
+library(mvtnorm)
+library(kableExtra)
+library(robustbase)
+library(rrcov)
+library(knitr)
+library(plotrix)
+library(RColorBrewer)
+library(MASS)
+library(corrplot)
+library(psych)
+library(stats)
+library(readxl)
+library(caret)
+library(nnet)
+library(stringr)
+library(rpart)
+library(classmap)
+library(class)
+library(PRROC)
+library(CCA)
+library(purrr)
+library(FNN)
+```
+
+
+# Importing final dataset 
+```{r}
+proc_data  <- read_csv('C:/Users/wwwta/OneDrive/Desktop/MASTER MECD/MULTIVARIATE ANALYSIS/MA - PROJECT RV/nba.csv', show_col_types = FALSE)
+
+head(proc_data, 5) 
+```
+
+
+# Function to drop columns if neeeded
+```{r}
+drop_columns <- function(data, columns_to_drop) {
+  new_data <- data[, !(colnames(data) %in% columns_to_drop), drop = FALSE]
+  return(new_data)
+}
+```
+
+# Function to standarize data
+```{r}
+scale_aux <- function(data, columm_factor) {
+  data[[columm_factor]] <- as.factor(data[[columm_factor]])
+  numeric_cols <- sapply(data, is.numeric)
+  data[numeric_cols] <- scale(data[numeric_cols])
+  
+  return(data)
+}
+```
+
+# Function to split the data balanced and check
+```{r}
+
+train_test_split_balanced <- function(data, split_ratio, factor_column) {
+
+  set.seed(123)  
+  train_indices <- createDataPartition(data[[factor_column]], p = split_ratio, list = FALSE)
+  
+  train_set <- data[train_indices, ]
+  test_set <- data[-train_indices, ]
+  
+  check_1 <- table(data[[factor_column]]) / nrow(data)
+  check_2 <- table(train_set[[factor_column]]) / nrow(train_set)
+  
+  return(list(train = train_set, test = test_set))
+}
+
+```
+
+
+# Forming two different datasets for the 2 classification tasks. 
+```{r}
+data_awards  <- drop_columns(proc_data, columns_to_drop = c("Pos"))
+
+data_positions <- drop_columns(proc_data, columns_to_drop = c("AWD"))
+data_positions$Pos <- as.numeric(as.factor(data_positions$Pos))
+
+```
+
+
+# Creating balanced train and validation sets for both tasks and scaling to apply classifiers with classmap library
+```{r}
+
+split_data_awards <- train_test_split_balanced(data_awards, split_ratio=0.8, factor_column="AWD")
+train_awards <- split_data_awards$train
+train_awards  <- scale_aux(train_awards, columm_factor="AWD")
+test_awards <- split_data_awards$test
+test_awards  <- scale_aux(test_awards, columm_factor="AWD")
+
+
+split_data_positions <- train_test_split_balanced(data_positions, split_ratio=0.8, factor_column="Pos")
+train_positions <- split_data_positions$train
+train_positions  <- scale_aux(train_positions, columm_factor="Pos")
+test_positions <- split_data_positions$test
+test_positions  <- scale_aux(test_positions, columm_factor="Pos")
+
+```
+
+
+
+# Classification with Classmap Package
+
+# Application of classifiers
+
+# LDA with classmap positions
+```{r}
+
+X <- train_positions[,-18]
+y <- as.factor(train_positions$Pos)
+vcr_train_lda <- vcr.da.train(X, y, rule = "LDA")
+
+x_test <- test_positions[,-18]
+y_test <- as.factor(test_positions$Pos)
+vcr_new_data_lda <- vcr.da.newdata(x_test, ynew=y_test, vcr_train_lda)
+
+```
+
+
+#Creating the plots
+```{r}
+
+cols <- c("red", "darkgreen", "blue","yellow","orange")
+stackedplot(vcr_new_data_lda, classCols = cols, separSize = 1.5,
+            minSize = 1, showLegend = TRUE)
+
+classmap(vcr_new_data_lda, 1, classCols = cols)
+classmap(vcr_new_data_lda, 2, classCols = cols)
+classmap(vcr_new_data_lda, 3, classCols = cols)
+classmap(vcr_new_data_lda, 4, classCols = cols)
+classmap(vcr_new_data_lda, 5, classCols = cols)
+
+```
+
+
+# LDA with classmap awards
+```{r}
+
+X_awards_lda <- train_awards[,-18]
+y_awards_lda <- as.factor(train_awards$AWD)
+vcr_train_lda_awards <- vcr.da.train(X_awards_lda, y_awards_lda, rule = "LDA")
+
+x_test_awards_lda <- test_awards[,-18]
+y_test_awards_lda <- as.factor(test_awards$AWD)
+vcr_new_data_awards_lda <- vcr.da.newdata(x_test_awards_lda, ynew=y_test_awards_lda, vcr_train_lda_awards)
+
+```
+
+
+# plots LDA awards with Classmap library
+```{r}
+
+cols <- c("red", "darkgreen")
+stackedplot(vcr_new_data_awards_lda, classCols = cols, separSize = 1.5,
+            minSize = 1, showLegend = TRUE)
+
+classmap(vcr_new_data_awards_lda, 1, classCols = cols)
+classmap(vcr_new_data_awards_lda, 2, classCols = cols)
+
+
+```
+
+# Analysis of Linear Discriminants in LDA
+
+```{r}
+library(pheatmap)
+df = read.csv("nba.csv")
+# standardize features
+for (i in 1:17) df[, i] = (df[, i] - mean(df[, i])) / sd(df[, i])
+# discriminant function representations for AWD
+c1 = lda(df[1:17], df$AWD)$scaling
+# discriminant function representations for Pos
+c2 = lda(df[1:17], df$Pos)$scaling
+pheatmap(c1, cluster_rows = F, cluster_cols = F, display_numbers = TRUE,
+         breaks = max(abs(c1)) * seq(-1, 1, length.out = 1e2))
+pheatmap(c2, cluster_rows = F, cluster_cols = F, display_numbers = TRUE,
+         breaks = max(abs(c1)) * seq(-1, 1, length.out=1e2))
+```
