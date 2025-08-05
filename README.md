@@ -36,17 +36,7 @@ We apply dimensionality reduction (PCA), data transformations, and several class
 
 ├── nba_transformed_pca.csv               # Dataset after PCA dimensionality reduction
 
-├── Classification-methods---final.pdf    # Exported PDF of the classification analysis notebook
-
-├── Classmaps-and-Results---Final.pdf     # Exported PDF with Classmaps and visual results
-
-├── Report.pdf                            # Full project report (final version)
-
-├── Presentation MA Project.pdf           # Slide deck used in oral project presentation
-
-├── File Index and Explanation.pdf        # A file index and short explanation of all contents
-
-├── estructura_proyecto.txt               # Planning and structure of the project
+├── Presentation.pdf                      # Slide deck of the project
 
 └── README.md                             # You're here
 
@@ -112,9 +102,3 @@ source("data_prepare.r")       # Load and transform the data
 - Classmap: https://cran.r-project.org/web/packages/classmap/
 
 ---
-
-## Authors
-
-- Oleh Lukyrych  
-- Renato Vivar  
-- Susana Ferreira
